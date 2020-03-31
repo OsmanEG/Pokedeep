@@ -3,19 +3,24 @@ import numpy as np
 import cv2
 import os
 import matplotlib.pyplot as plt
+import keras
 
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import train_test_split
-from imutils import paths
+from sklearn.preprocessing      import LabelEncoder
+from sklearn.model_selection    import train_test_split
+from imutils                    import paths
 
-from keras.models import Sequential
+from keras.models               import Sequential
 from keras.layers.convolutional import Conv2D
-from keras.layers.core import Activation
-from keras.layers.core import Flatten
-from keras.layers.core import Dense
-from keras import backend as K
-from keras.utils import to_categorical
-from keras.preprocessing.image import img_to_array
+from keras.layers.convolutional import MaxPooling2D
+from keras.layers.convolutional import ZeroPadding2D
+from keras.layers.core          import Activation
+from keras.layers.core          import Flatten
+from keras.layers.core          import Dropout
+from keras.layers.core          import Dense
+from keras                      import backend as K
+from keras.utils                import to_categorical
+from keras.preprocessing.image  import img_to_array
+from keras.preprocessing.image  import ImageDataGenerator
 
 #Loading in and processing the images
 class LoadingInPokemon:
@@ -64,9 +69,19 @@ class LoadingInPokemon:
 
         return (np.array(data), np.array(labels))
 
+#Initializing image augmentation
+datagen = ImageDataGenerator(width_shift_range=0.15, 
+                             height_shift_range=0.15, 
+                             rotation_range=1, 
+                             shear_range=0.2, 
+                             channel_shift_range=10, 
+                             horizontal_flip=True, 
+                             vertical_flip=True, 
+                             zoom_range=0.1)
+
 #Initializing the image data
-height = 128
-width = 128
+height = 224
+width = 224
 depth = 3
 
 shape = (height, width, depth)
@@ -88,6 +103,9 @@ testY = le.fit_transform(testY)
 trainY = to_categorical(trainY)
 testY = to_categorical(testY)
 
+#Augmenting train data
+augment_iter = datagen.fit(trainX)
+
 #Creating the model
 print("|POKEDEEP| Creating the network...")
 model = Sequential()
@@ -101,16 +119,55 @@ if K.image_data_format() == "channels_first":
 epochs = 100
 
 print("|POKEDEEP| Compiling the network...")
-model.add(Conv2D(64, kernel_size = 3, activation = "relu", input_shape = shape))
-model.add(Conv2D(32, kernel_size = 3, activation = "relu"))
+model.add(ZeroPadding2D((1,1), input_shape = shape))
+model.add(Conv2D(64, (3, 3), activation = 'relu'))
+model.add(ZeroPadding2D((1,1)))
+model.add(Conv2D(64, (3, 3), activation = 'relu'))
+model.add(MaxPooling2D((2,2), strides = (2,2)))
+
+model.add(ZeroPadding2D((1,1)))
+model.add(Conv2D(128, (3, 3), activation = 'relu'))
+model.add(ZeroPadding2D((1,1)))
+model.add(Conv2D(128, (3, 3), activation = 'relu'))
+model.add(MaxPooling2D((2,2), strides = (2,2)))
+
+model.add(ZeroPadding2D((1,1)))
+model.add(Conv2D(256, (3, 3), activation = 'relu'))
+model.add(ZeroPadding2D((1,1)))
+model.add(Conv2D(256, (3, 3), activation = 'relu'))
+model.add(ZeroPadding2D((1,1)))
+model.add(Conv2D(256, (3, 3), activation = 'relu'))
+model.add(MaxPooling2D((2,2), strides = (2,2)))
+
+model.add(ZeroPadding2D((1,1)))
+model.add(Conv2D(512, (3, 3), activation = 'relu'))
+model.add(ZeroPadding2D((1,1)))
+model.add(Conv2D(512, (3, 3), activation = 'relu'))
+model.add(ZeroPadding2D((1,1)))
+model.add(Conv2D(512, (3, 3), activation = 'relu'))
+model.add(MaxPooling2D((2,2), strides = (2,2)))
+
+model.add(ZeroPadding2D((1,1)))
+model.add(Conv2D(512, (3, 3), activation = 'relu'))
+model.add(ZeroPadding2D((1,1)))
+model.add(Conv2D(512, (3, 3), activation = 'relu'))
+model.add(ZeroPadding2D((1,1)))
+model.add(Conv2D(512, (3, 3), activation = 'relu'))
+model.add(MaxPooling2D((2,2), strides = (2,2)))
+
 model.add(Flatten())
-model.add(Dense(149))
-model.add(Activation("softmax"))
+model.add(Dense(4096, activation = 'relu'))
+model.add(Dropout(0.5))
+model.add(Dense(4096, activation = 'relu'))
+model.add(Dropout(0.5))
+model.add(Dense(149, activation = 'softmax'))
+
 model.compile(loss = "categorical_crossentropy", optimizer = "adam", metrics = ["accuracy"])
 
 #Training the model
 print("|POKEDEEP| Training the network...")
-M = model.fit(trainX, trainY, validation_data = (testX, testY), batch_size = 32, epochs = epochs)
+#M = model.fit_generator(datagen.flow(trainX, trainY, batch_size=32), steps_per_epoch=len(trainX) // 32, epochs=epochs)
+M = model.fit(trainX, trainY, validation_data = (testX, testY), batch_size = 16, epochs = epochs)
 
 #Saving the model
 model.save("pokedeep.h5")
@@ -118,10 +175,12 @@ model.save("pokedeep.h5")
 #Plotting loss and accuracy in training
 plt.style.use("ggplot")
 plt.figure()
-plt.plot(np.arange(0, epochs), M.history["loss"], label = "Training Loss")
-plt.plot(np.arange(0, epochs), M.history["val_loss"], label = "Loss")
-plt.plot(np.arange(0, epochs), M.history["accuracy"], label = "Training Accuracy")
+
+plt.plot(np.arange(0, epochs), M.history["loss"],         label = "Training Loss")
+plt.plot(np.arange(0, epochs), M.history["val_loss"],     label = "Loss")
+plt.plot(np.arange(0, epochs), M.history["accuracy"],     label = "Training Accuracy")
 plt.plot(np.arange(0, epochs), M.history["val_accuracy"], label = "Accuracy")
+
 plt.title("Loss and Accuracy during the 'Training' process ")
 plt.xlabel("Epoch Number")
 plt.ylabel("Loss and Accuracy")
